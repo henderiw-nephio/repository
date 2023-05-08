@@ -17,25 +17,18 @@ limitations under the License.
 package main
 
 import (
-	"context"
-	"encoding/base64"
 	"flag"
-	"fmt"
 	"os"
-	"reflect"
 	"time"
 
-	"code.gitea.io/sdk/gitea"
 	porchconfigv1alpha1 "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
 	infrav1alpha1 "github.com/henderiw-nephio/repository/apis/infra/v1alpha1"
 	"github.com/henderiw-nephio/repository/controllers"
 	ctrlconfig "github.com/henderiw-nephio/repository/controllers/config"
 	"github.com/henderiw-nephio/repository/pkg/applicator"
+	"github.com/henderiw-nephio/repository/pkg/giteaclient"
 	"go.uber.org/zap/zapcore"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -103,10 +96,11 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	// runs continuously until this is resolved
-	giteaCLient := getGiteaClient(ctx, applicator.NewAPIPatchingApplicator(mgr.GetClient()), "nephio-system")
+	gc := giteaclient.New(applicator.NewAPIPatchingApplicator(mgr.GetClient()), os.Getenv("POD_NAMESPACE"))
+	go gc.Start(ctx)
 
 	if err := controllers.Setup(ctx, mgr, &ctrlconfig.ControllerConfig{
-		GiteaClient: giteaCLient,
+		GiteaClient: gc,
 		Poll:        5 * time.Second,
 		//Copts: controller.Options{
 		//	MaxConcurrentReconciles: 1,
@@ -131,94 +125,5 @@ func main() {
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
-	}
-}
-
-func getClientAuth(secret *corev1.Secret) gitea.ClientOption {
-	if len(secret.Data["token"]) == 0 {
-		return gitea.SetBasicAuth(string(secret.Data["username"]), string(secret.Data["password"]))
-	}
-	return gitea.SetToken(string(secret.Data["token"]))
-}
-
-func getGiteaClient(ctx context.Context, client applicator.APIPatchingApplicator, namespace string) *gitea.Client {
-	var err error
-	for {
-	LOOP:
-
-		if err != nil {
-			time.Sleep(5 * time.Second)
-		}
-		// get secret that was created when installing gitea
-		secret := &corev1.Secret{}
-		if err := client.Get(ctx, types.NamespacedName{
-			Namespace: namespace,
-			Name:      "git-user-secret"}, secret); err != nil {
-		}
-		if err != nil {
-			setupLog.Error(err, "cannot get secret")
-			goto LOOP
-		}
-		giteaClient, err := gitea.NewClient("http://localhost:3000", getClientAuth(secret))
-		if err != nil {
-			setupLog.Error(err, "cannot authenticate to gitea")
-			goto LOOP
-		}
-
-		tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
-		if err != nil {
-			setupLog.Error(err, "cannot list access tokens")
-			goto LOOP
-		}
-		tokenFound := false
-		for _, token := range tokens {
-			if token.Name == "git-repo-access-token" {
-				tokenFound = true
-			}
-		}
-
-		if !tokenFound {
-			token, _, err := giteaClient.CreateAccessToken(gitea.CreateAccessTokenOption{
-				Name: "git-repo-access-token",
-			})
-			if err != nil {
-				setupLog.Error(err, "cannot create access token")
-				goto LOOP
-			}
-			fmt.Printf("token: %#v\n", token.Token)
-
-			secret := &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: corev1.SchemeGroupVersion.Identifier(),
-					Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "git-repo-access-token",
-					Namespace: namespace,
-				},
-				Data: map[string][]byte{
-					"username": secret.Data["username"],
-					"password": []byte(base64.StdEncoding.EncodeToString([]byte(token.Token))),
-				},
-				Type: corev1.SecretTypeBasicAuth,
-			}
-			/*
-				- name: configure secret on mgmt cluster
-				  shell: kubectl --kubeconfig ~/.kube/mgmt-config create secret generic gitea-access-token \
-				    --from-literal=username={{ gitea_username}} \
-				    --from-literal=password={{ gitea_token['content'] | b64decode }} \
-				    --type=kubernetes.io/basic-auth
-				  failed_when:
-				    - result.rc > 1
-				    - result.rc == 1 and "already exists" not in result.stderr
-				  when:
-				    - gitea_username is defined
-			*/
-			if err := client.Apply(ctx, secret); err != nil {
-				setupLog.Error(err, "cannot create secret")
-				goto LOOP
-			}
-		}
-		return giteaClient
 	}
 }

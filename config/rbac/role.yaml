@@ -6,26 +6,6 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - config.porch.kpt.dev
-  resources:
-  - repositories
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - config.porch.kpt.dev
-  resources:
-  - repositories/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - infra.nephio.org
   resources:
   - repositories

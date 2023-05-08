@@ -30,7 +30,7 @@ const (
 	// ConditionTypeReady represents the resource ready condition
 	ConditionTypeReady ConditionType = "Ready"
 	// ConditionTypePorchRepoReady represents the resource porch repo ready condition
-	ConditionTypePorchRepoReady ConditionType = "PorchRepoReady"
+	//ConditionTypePorchRepoReady ConditionType = "PorchRepoReady"
 )
 
 // A ConditionReason represents the reason a resource is in a condition.
@@ -178,6 +178,7 @@ func Failed(msg string) Condition {
 
 }
 
+/*
 // Ready returns a condition that indicates the resource is
 // ready for use.
 func PorchRepoReady() Condition {
@@ -210,3 +211,4 @@ func PorchRepoUnkown() Condition {
 		Reason:             string(ConditionReasonUnknown),
 	}}
 }
+*/

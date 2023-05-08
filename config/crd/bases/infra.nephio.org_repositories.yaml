@@ -15,7 +15,14 @@ spec:
     singular: repository
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: REPO_STATUS
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='PorchRepoReady')].status
+      name: PORCH_REPO_STATUS
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: Repository is the Schema for the repository API
@@ -105,3 +112,5 @@ spec:
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}

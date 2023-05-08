@@ -39,7 +39,10 @@ type RepositoryStatus struct {
 	URL *string `json:"url,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="REPO_STATUS",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="PORCH_REPO_STATUS",type="string",JSONPath=".status.conditions[?(@.type=='PorchRepoReady')].status"
 
 // Repository is the Schema for the repository API
 type Repository struct {

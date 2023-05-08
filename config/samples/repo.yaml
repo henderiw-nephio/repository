@@ -1,0 +1,5 @@
+apiVersion: infra.nephio.org/v1alpha1
+kind: Repository
+metadata:
+  name: edge
+spec:

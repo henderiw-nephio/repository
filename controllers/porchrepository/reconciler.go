@@ -16,9 +16,11 @@ limitations under the License.
 
 package porchrepository
 
+/*
 import (
 	"context"
 	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/nokia/k8s-ipam/pkg/resource"
@@ -31,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -52,6 +53,7 @@ func Setup(mgr ctrl.Manager, options *ctrlconfig.ControllerConfig) error {
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("porchRepositoryController").
 		For(&infrav1alpha1.Repository{}).
 		Complete(r)
 }
@@ -73,7 +75,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			r.l.Error(err, "cannot get resource")
 			return ctrl.Result{}, errors.Wrap(resource.IgnoreNotFound(err), "cannot get resource")
 		}
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 
 	cr.SetConditions(infrav1alpha1.PorchRepoUnkown())
@@ -105,10 +107,11 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if err := r.Apply(ctx, porchRepo); err != nil {
 			r.l.Error(err, "cannot apply resource")
 			cr.SetConditions(infrav1alpha1.PorchRepoFailed())
-			return reconcile.Result{}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 		}
 		cr.SetConditions(infrav1alpha1.PorchRepoReady())
 	}
 
 	return ctrl.Result{}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 }
+*/

@@ -19,12 +19,12 @@ package ctrlrconfig
 import (
 	"time"
 
-	"code.gitea.io/sdk/gitea"
+	"github.com/henderiw-nephio/repository/pkg/giteaclient"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 type ControllerConfig struct {
-	GiteaClient *gitea.Client
+	GiteaClient giteaclient.GiteaClient
 	Poll        time.Duration
 	Copts       controller.Options
 }

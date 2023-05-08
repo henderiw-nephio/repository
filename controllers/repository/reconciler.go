@@ -18,6 +18,10 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/nokia/k8s-ipam/pkg/meta"
@@ -27,10 +31,14 @@ import (
 	"code.gitea.io/sdk/gitea"
 	infrav1alpha1 "github.com/henderiw-nephio/repository/apis/infra/v1alpha1"
 	ctrlconfig "github.com/henderiw-nephio/repository/controllers/config"
+	"github.com/henderiw-nephio/repository/pkg/applicator"
+	"github.com/henderiw-nephio/repository/pkg/giteaclient"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -46,19 +54,20 @@ const (
 // SetupWithManager sets up the controller with the Manager.
 func Setup(mgr ctrl.Manager, options *ctrlconfig.ControllerConfig) error {
 	r := &reconciler{
-		Client:      mgr.GetClient(),
-		giteaClient: options.GiteaClient,
-		finalizer:   resource.NewAPIFinalizer(mgr.GetClient(), finalizer),
+		APIPatchingApplicator: applicator.NewAPIPatchingApplicator(mgr.GetClient()),
+		giteaClient:           options.GiteaClient,
+		finalizer:             resource.NewAPIFinalizer(mgr.GetClient(), finalizer),
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("repositoryController").
 		For(&infrav1alpha1.Repository{}).
 		Complete(r)
 }
 
 type reconciler struct {
-	client.Client
-	giteaClient *gitea.Client
+	applicator.APIPatchingApplicator
+	giteaClient giteaclient.GiteaClient
 	finalizer   *resource.APIFinalizer
 
 	l logr.Logger
@@ -75,25 +84,42 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			r.l.Error(err, "cannot get resource")
 			return ctrl.Result{}, errors.Wrap(resource.IgnoreNotFound(err), "cannot get resource")
 		}
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 
 	if meta.WasDeleted(cr) {
-		_, err := r.giteaClient.DeleteRepo("owner", cr.GetName())
-		if err != nil {
-			r.l.Error(err, "cannot delete repo")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return reconcile.Result{Requeue: true}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		// if the condition is false the repo is likely not created
+		if cr.GetCondition(infrav1alpha1.ConditionTypeReady).Status == metav1.ConditionTrue {
+			giteaClient := r.giteaClient.Get()
+			if giteaClient == nil {
+				err := fmt.Errorf("gitea server unreachable")
+				r.l.Error(err, "cannot connect to gitea server")
+				cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+				return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+			}
+
+			_, err := giteaClient.DeleteRepo("owner", cr.GetName())
+			if err != nil {
+				r.l.Error(err, "cannot delete repo")
+				cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+				return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+			}
+			_, err = giteaClient.DeleteAccessToken(cr.GetName())
+			if err != nil {
+				r.l.Error(err, "cannot delete repo")
+				cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+				return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+			}
 		}
 
 		if err := r.finalizer.RemoveFinalizer(ctx, cr); err != nil {
 			r.l.Error(err, "cannot remove finalizer")
 			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return reconcile.Result{Requeue: true}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 		}
 
 		r.l.Info("Successfully deleted resource")
-		return reconcile.Result{Requeue: false}, nil
+		return ctrl.Result{Requeue: false}, nil
 	}
 
 	if err := r.finalizer.AddFinalizer(ctx, cr); err != nil {
@@ -102,34 +128,124 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// not, we requeue explicitly, which will trigger backoff.
 		r.l.Error(err, "cannot add finalizer")
 		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-		return reconcile.Result{Requeue: true}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 	}
 
-	repos, _, err := r.giteaClient.ListMyRepos(gitea.ListReposOptions{})
+	giteaClient := r.giteaClient.Get()
+	if giteaClient == nil {
+		err := fmt.Errorf("gitea server unreachable")
+		r.l.Error(err, "cannot connect to gitea server")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+	}
+
+	// create repo
+	if err := r.createRepo(ctx, giteaClient, cr); err != nil {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+	}
+	// create token and secret
+	if err := r.createAccessToken(ctx, giteaClient, cr); err != nil {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+	}
+	cr.SetConditions(infrav1alpha1.Ready())
+	return ctrl.Result{}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+}
+
+func (r *reconciler) createRepo(ctx context.Context, giteaClient *gitea.Client, cr *infrav1alpha1.Repository) error {
+	repos, _, err := giteaClient.ListMyRepos(gitea.ListReposOptions{})
 	if err != nil {
 		r.l.Error(err, "cannot list repo")
 		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-		return reconcile.Result{}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		return err
 	}
-
 	repoFound := false
 	for _, repo := range repos {
 		if repo.Name == cr.GetName() {
 			repoFound = true
+			cr.Status.URL = &repo.CloneURL
 			break
 		}
 	}
 	if !repoFound {
-		_, _, err := r.giteaClient.CreateRepo(gitea.CreateRepoOption{
-			Name:     cr.GetName(),
-			AutoInit: true,
+		repo, _, err := giteaClient.CreateRepo(gitea.CreateRepoOption{
+			Name:          cr.GetName(),
+			DefaultBranch: "main",
 		})
 		if err != nil {
 			r.l.Error(err, "cannot create repo")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return reconcile.Result{}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+			// Here we dont provide the full error sicne the message change every time and this will retrigger
+			// a new reconcile loop
+			cr.SetConditions(infrav1alpha1.Failed("cannot create repo"))
+			return err
+		}
+		cr.Status.URL = &repo.CloneURL
+	}
+	return nil
+}
+
+func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.Client, cr *infrav1alpha1.Repository) error {
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: os.Getenv("POD_NAMESPACE"),
+		Name:      "git-user-secret",
+	},
+		secret); err != nil {
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return errors.Wrap(err, "cannot get secret")
+	}
+
+	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
+	if err != nil {
+		r.l.Error(err, "cannot list repo")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return err
+	}
+	tokenFound := false
+	for _, repo := range tokens {
+		if repo.Name == cr.GetName() {
+			tokenFound = true
+			break
 		}
 	}
-	cr.SetConditions(infrav1alpha1.Ready())
-	return ctrl.Result{}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+	if !tokenFound {
+		token, _, err := giteaClient.CreateAccessToken(gitea.CreateAccessTokenOption{
+			Name: cr.GetName(),
+		})
+		if err != nil {
+			r.l.Error(err, "cannot create token")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return err
+		}
+		secret := &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: corev1.SchemeGroupVersion.Identifier(),
+				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: os.Getenv("POD_NAMESPACE"),
+				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: cr.APIVersion,
+						Kind:       cr.GetObjectKind().GroupVersionKind().Kind,
+						Name:       cr.GetName(),
+						UID:        cr.GetUID(),
+						Controller: pointer.Bool(true),
+					},
+				},
+			},
+			Data: map[string][]byte{
+				"username": secret.Data["username"],
+				"password": []byte(token.Token),
+			},
+			Type: corev1.SecretTypeBasicAuth,
+		}
+
+		if err := r.Apply(ctx, secret); err != nil {
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			r.l.Error(err, "cannot create secret")
+			return err
+		}
+	}
+	return nil
 }

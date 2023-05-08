@@ -20,7 +20,6 @@ import (
 	"context"
 
 	ctrlconfig "github.com/henderiw-nephio/repository/controllers/config"
-	"github.com/henderiw-nephio/repository/controllers/porchrepository"
 	"github.com/henderiw-nephio/repository/controllers/repository"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -29,7 +28,7 @@ import (
 func Setup(ctx context.Context, mgr ctrl.Manager, opts *ctrlconfig.ControllerConfig) error {
 	for _, setup := range []func(mgr ctrl.Manager, cfg *ctrlconfig.ControllerConfig) error{
 		repository.Setup,
-		porchrepository.Setup,
+		//porchrepository.Setup,
 	} {
 		if err := setup(mgr, opts); err != nil {
 			return err
