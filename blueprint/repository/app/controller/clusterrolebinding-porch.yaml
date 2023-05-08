@@ -18,3 +18,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: repository-controller
+  namespace: nephio-system

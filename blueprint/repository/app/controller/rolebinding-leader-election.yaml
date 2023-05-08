@@ -11,6 +11,7 @@ metadata:
     app.kubernetes.io/part-of: repository
     app.kubernetes.io/version: tbd
   name: repository-controller-leader-election-role-binding
+  namespace: nephio-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -18,3 +19,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: repository-controller
+  namespace: nephio-system
