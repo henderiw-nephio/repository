@@ -36,7 +36,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -89,28 +88,52 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if meta.WasDeleted(cr) {
 		// if the condition is false the repo is likely not created
-		if cr.GetCondition(infrav1alpha1.ConditionTypeReady).Status == metav1.ConditionTrue {
-			giteaClient := r.giteaClient.Get()
-			if giteaClient == nil {
-				err := fmt.Errorf("gitea server unreachable")
-				r.l.Error(err, "cannot connect to gitea server")
-				cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-				return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-			}
-
-			_, err := giteaClient.DeleteRepo("owner", cr.GetName())
-			if err != nil {
-				r.l.Error(err, "cannot delete repo")
-				cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-				return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-			}
-			_, err = giteaClient.DeleteAccessToken(cr.GetName())
-			if err != nil {
-				r.l.Error(err, "cannot delete repo")
-				cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-				return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-			}
+		giteaClient := r.giteaClient.Get()
+		if giteaClient == nil {
+			err := fmt.Errorf("gitea server unreachable")
+			r.l.Error(err, "cannot connect to gitea server")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 		}
+
+		secret := &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: corev1.SchemeGroupVersion.Identifier(),
+				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: os.Getenv("POD_NAMESPACE"),
+				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
+			},
+		}
+		err := r.Delete(ctx, secret)
+		if resource.IgnoreNotFound(err) != nil {
+			r.l.Error(err, "cannot delete access token secret")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		}
+
+		u, _, err := giteaClient.GetMyUserInfo()
+		if err != nil {
+			r.l.Error(err, "cannot get user info")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		}
+
+		_, err = giteaClient.DeleteRepo(u.UserName, cr.GetName())
+		if err != nil {
+			r.l.Error(err, "cannot delete repo")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		}
+		r.l.Info("repo deleted", "name", cr.GetName())
+		_, err = giteaClient.DeleteAccessToken(cr.GetName())
+		if err != nil {
+			r.l.Error(err, "cannot delete repo")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+		}
+		r.l.Info("access token deleted", "name", cr.GetName())
 
 		if err := r.finalizer.RemoveFinalizer(ctx, cr); err != nil {
 			r.l.Error(err, "cannot remove finalizer")
@@ -178,6 +201,7 @@ func (r *reconciler) createRepo(ctx context.Context, giteaClient *gitea.Client, 
 			cr.SetConditions(infrav1alpha1.Failed("cannot create repo"))
 			return err
 		}
+		r.l.Info("repo created", "name", cr.GetName())
 		cr.Status.URL = &repo.CloneURL
 	}
 	return nil
@@ -216,6 +240,7 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
 			return err
 		}
+		r.l.Info("token created", "name", cr.GetName())
 		secret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: corev1.SchemeGroupVersion.Identifier(),
@@ -224,15 +249,11 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: os.Getenv("POD_NAMESPACE"),
 				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: cr.APIVersion,
-						Kind:       cr.GetObjectKind().GroupVersionKind().Kind,
-						Name:       cr.GetName(),
-						UID:        cr.GetUID(),
-						Controller: pointer.Bool(true),
-					},
-				},
+				/*
+					OwnerReferences: []metav1.OwnerReference{meta.AsController(
+						meta.TypedReferenceTo(cr, infrav1alpha1.RepositoryGroupVersionKind),
+					)},
+				*/
 			},
 			Data: map[string][]byte{
 				"username": secret.Data["username"],
@@ -246,6 +267,7 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			r.l.Error(err, "cannot create secret")
 			return err
 		}
+		r.l.Info("secret access token created", "name", cr.GetName(), "secret", secret)
 	}
 	return nil
 }

@@ -18,15 +18,12 @@ package giteaclient
 
 import (
 	"context"
-	"fmt"
-	"reflect"
 	"time"
 
 	"code.gitea.io/sdk/gitea"
 	"github.com/go-logr/logr"
 	"github.com/henderiw-nephio/repository/pkg/applicator"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -77,50 +74,52 @@ func (r *gc) Start(ctx context.Context) {
 			goto LOOP
 		}
 
-		tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
-		if err != nil {
-			r.l.Error(err, "cannot list access tokens")
-			goto LOOP
-		}
-		tokenFound := false
-		for _, token := range tokens {
-			if token.Name == "git-repo-access-token" {
-				tokenFound = true
-			}
-		}
-
-		if !tokenFound {
-			token, _, err := giteaClient.CreateAccessToken(gitea.CreateAccessTokenOption{
-				Name: "git-repo-access-token",
-			})
+		/*
+			tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
 			if err != nil {
-				r.l.Error(err, "cannot create access token")
+				r.l.Error(err, "cannot list access tokens")
 				goto LOOP
 			}
-
-			fmt.Println("token", token.Token)
-
-			secret := &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: corev1.SchemeGroupVersion.Identifier(),
-					Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "git-repo-access-token",
-					Namespace: r.namespace,
-				},
-				Data: map[string][]byte{
-					"username": secret.Data["username"],
-					"password": []byte(token.Token),
-				},
-				Type: corev1.SecretTypeBasicAuth,
+			tokenFound := false
+			for _, token := range tokens {
+				if token.Name == "git-repo-access-token" {
+					tokenFound = true
+				}
 			}
 
-			if err := r.client.Apply(ctx, secret); err != nil {
-				r.l.Error(err, "cannot create secret")
-				goto LOOP
+			if !tokenFound {
+				token, _, err := giteaClient.CreateAccessToken(gitea.CreateAccessTokenOption{
+					Name: "git-repo-access-token",
+				})
+				if err != nil {
+					r.l.Error(err, "cannot create access token")
+					goto LOOP
+				}
+
+				fmt.Println("token", token.Token)
+
+				secret := &corev1.Secret{
+					TypeMeta: metav1.TypeMeta{
+						APIVersion: corev1.SchemeGroupVersion.Identifier(),
+						Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "git-repo-access-token",
+						Namespace: r.namespace,
+					},
+					Data: map[string][]byte{
+						"username": secret.Data["username"],
+						"password": []byte(token.Token),
+					},
+					Type: corev1.SecretTypeBasicAuth,
+				}
+
+				if err := r.client.Apply(ctx, secret); err != nil {
+					r.l.Error(err, "cannot create secret")
+					goto LOOP
+				}
 			}
-		}
+		*/
 		r.giteaClient = giteaClient
 		r.l.Info("gitea init done")
 		return
