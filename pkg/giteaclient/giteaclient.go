@@ -74,52 +74,6 @@ func (r *gc) Start(ctx context.Context) {
 			goto LOOP
 		}
 
-		/*
-			tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
-			if err != nil {
-				r.l.Error(err, "cannot list access tokens")
-				goto LOOP
-			}
-			tokenFound := false
-			for _, token := range tokens {
-				if token.Name == "git-repo-access-token" {
-					tokenFound = true
-				}
-			}
-
-			if !tokenFound {
-				token, _, err := giteaClient.CreateAccessToken(gitea.CreateAccessTokenOption{
-					Name: "git-repo-access-token",
-				})
-				if err != nil {
-					r.l.Error(err, "cannot create access token")
-					goto LOOP
-				}
-
-				fmt.Println("token", token.Token)
-
-				secret := &corev1.Secret{
-					TypeMeta: metav1.TypeMeta{
-						APIVersion: corev1.SchemeGroupVersion.Identifier(),
-						Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
-					},
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "git-repo-access-token",
-						Namespace: r.namespace,
-					},
-					Data: map[string][]byte{
-						"username": secret.Data["username"],
-						"password": []byte(token.Token),
-					},
-					Type: corev1.SecretTypeBasicAuth,
-				}
-
-				if err := r.client.Apply(ctx, secret); err != nil {
-					r.l.Error(err, "cannot create secret")
-					goto LOOP
-				}
-			}
-		*/
 		r.giteaClient = giteaClient
 		r.l.Info("gitea init done")
 		return
@@ -128,8 +82,6 @@ func (r *gc) Start(ctx context.Context) {
 
 func getClientAuth(secret *corev1.Secret) gitea.ClientOption {
 	return gitea.SetBasicAuth(string(secret.Data["username"]), string(secret.Data["password"]))
-	// if token based authentication would work we could use the below
-	//return gitea.SetToken(os.Getenv(myTokenEnv))
 }
 
 func (r *gc) Get() *gitea.Client {

@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"os"
-	"time"
 
 	porchconfigv1alpha1 "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
 	infrav1alpha1 "github.com/henderiw-nephio/repository/apis/infra/v1alpha1"
@@ -101,10 +100,6 @@ func main() {
 
 	if err := controllers.Setup(ctx, mgr, &ctrlconfig.ControllerConfig{
 		GiteaClient: gc,
-		Poll:        5 * time.Second,
-		//Copts: controller.Options{
-		//	MaxConcurrentReconciles: 1,
-		//},
 	}); err != nil {
 		setupLog.Error(err, "Cannot add controllers to manager")
 		os.Exit(1)
