@@ -86,54 +86,19 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
+	giteaClient := r.giteaClient.Get()
+	if giteaClient == nil {
+		err := fmt.Errorf("gitea server unreachable")
+		r.l.Error(err, "cannot connect to gitea server")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
+	}
+
 	if meta.WasDeleted(cr) {
-		// if the condition is false the repo is likely not created
-		giteaClient := r.giteaClient.Get()
-		if giteaClient == nil {
-			err := fmt.Errorf("gitea server unreachable")
-			r.l.Error(err, "cannot connect to gitea server")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-		}
 
-		secret := &corev1.Secret{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: corev1.SchemeGroupVersion.Identifier(),
-				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: os.Getenv("POD_NAMESPACE"),
-				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
-			},
-		}
-		err := r.Delete(ctx, secret)
-		if resource.IgnoreNotFound(err) != nil {
-			r.l.Error(err, "cannot delete access token secret")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		if err := r.deleteRepo(ctx, giteaClient, cr); err != nil {
 			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 		}
-
-		u, _, err := giteaClient.GetMyUserInfo()
-		if err != nil {
-			r.l.Error(err, "cannot get user info")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-		}
-
-		_, err = giteaClient.DeleteRepo(u.UserName, cr.GetName())
-		if err != nil {
-			r.l.Error(err, "cannot delete repo")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-		}
-		r.l.Info("repo deleted", "name", cr.GetName())
-		_, err = giteaClient.DeleteAccessToken(cr.GetName())
-		if err != nil {
-			r.l.Error(err, "cannot delete repo")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-		}
-		r.l.Info("access token deleted", "name", cr.GetName())
 
 		if err := r.finalizer.RemoveFinalizer(ctx, cr); err != nil {
 			r.l.Error(err, "cannot remove finalizer")
@@ -150,14 +115,6 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// implicitly when we update our status with the new error condition. If
 		// not, we requeue explicitly, which will trigger backoff.
 		r.l.Error(err, "cannot add finalizer")
-		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
-	}
-
-	giteaClient := r.giteaClient.Get()
-	if giteaClient == nil {
-		err := fmt.Errorf("gitea server unreachable")
-		r.l.Error(err, "cannot connect to gitea server")
 		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
 		return ctrl.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.Wrap(r.Status().Update(ctx, cr), errUpdateStatus)
 	}
@@ -241,19 +198,11 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			return err
 		}
 		r.l.Info("token created", "name", cr.GetName())
+		// owner reference dont work since this is a cross-namespace resource
 		secret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: corev1.SchemeGroupVersion.Identifier(),
 				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: os.Getenv("POD_NAMESPACE"),
-				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
-				/*
-					OwnerReferences: []metav1.OwnerReference{meta.AsController(
-						meta.TypedReferenceTo(cr, infrav1alpha1.RepositoryGroupVersionKind),
-					)},
-				*/
 			},
 			Data: map[string][]byte{
 				"username": secret.Data["username"],
@@ -261,13 +210,54 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			},
 			Type: corev1.SecretTypeBasicAuth,
 		}
-
 		if err := r.Apply(ctx, secret); err != nil {
 			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
 			r.l.Error(err, "cannot create secret")
 			return err
 		}
-		r.l.Info("secret access token created", "name", cr.GetName(), "secret", secret)
+		r.l.Info("secret access token created", "name", cr.GetName())
 	}
+	return nil
+}
+
+func (r *reconciler) deleteRepo(ctx context.Context, giteaClient *gitea.Client, cr *infrav1alpha1.Repository) error {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: corev1.SchemeGroupVersion.Identifier(),
+			Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: os.Getenv("POD_NAMESPACE"),
+			Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
+		},
+	}
+	err := r.Delete(ctx, secret)
+	if resource.IgnoreNotFound(err) != nil {
+		r.l.Error(err, "cannot delete access token secret")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return err
+	}
+
+	u, _, err := giteaClient.GetMyUserInfo()
+	if err != nil {
+		r.l.Error(err, "cannot get user info")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return err
+	}
+
+	_, err = giteaClient.DeleteRepo(u.UserName, cr.GetName())
+	if err != nil {
+		r.l.Error(err, "cannot delete repo")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return err
+	}
+	r.l.Info("repo deleted", "name", cr.GetName())
+	_, err = giteaClient.DeleteAccessToken(cr.GetName())
+	if err != nil {
+		r.l.Error(err, "cannot delete repo")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return err
+	}
+	r.l.Info("access token deleted", "name", cr.GetName())
 	return nil
 }

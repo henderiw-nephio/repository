@@ -8,6 +8,10 @@ Based on the Repository CR the following child resources are managed:
 - access token to access the repo in gitea
 - secret in k8s cluster with the access token retrieved from gitea
 
+The secret child resource is created in the namespace where the pod is running in.
+
+TBD: how to find the pointer to the gitea server? right now hardcoded to gitea namespace and svc gitea-http
+
 ## build
 
 ```
