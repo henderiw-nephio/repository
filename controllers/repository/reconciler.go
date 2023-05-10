@@ -146,11 +146,38 @@ func (r *reconciler) createRepo(ctx context.Context, giteaClient *gitea.Client, 
 			break
 		}
 	}
+
+	createRepo := gitea.CreateRepoOption{Name: cr.GetName()}
+	if cr.Spec.DefaultBranch != nil {
+		createRepo.DefaultBranch = *cr.Spec.DefaultBranch
+	}
+	if cr.Spec.Description != nil {
+		createRepo.Description = *cr.Spec.Description
+	}
+	if cr.Spec.Private != nil {
+		createRepo.Private = *cr.Spec.Private
+	}
+	if cr.Spec.IssueLabels != nil {
+		createRepo.IssueLabels = *cr.Spec.IssueLabels
+	}
+	if cr.Spec.Gitignores != nil {
+		createRepo.Gitignores = *cr.Spec.Gitignores
+	}
+	if cr.Spec.License != nil {
+		createRepo.License = *cr.Spec.License
+	}
+	if cr.Spec.Readme != nil {
+		createRepo.Readme = *cr.Spec.Readme
+	}
+	if cr.Spec.DefaultBranch != nil {
+		createRepo.DefaultBranch = *cr.Spec.DefaultBranch
+	}
+	if cr.Spec.TrustModel != nil {
+		createRepo.TrustModel = gitea.TrustModel(*cr.Spec.TrustModel)
+	}
+
 	if !repoFound {
-		repo, _, err := giteaClient.CreateRepo(gitea.CreateRepoOption{
-			Name:          cr.GetName(),
-			DefaultBranch: "main",
-		})
+		repo, _, err := giteaClient.CreateRepo(createRepo)
 		if err != nil {
 			r.l.Error(err, "cannot create repo")
 			// Here we dont provide the full error sicne the message change every time and this will retrigger

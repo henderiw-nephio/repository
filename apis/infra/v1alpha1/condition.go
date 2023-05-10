@@ -177,38 +177,3 @@ func Failed(msg string) Condition {
 	}}
 
 }
-
-/*
-// Ready returns a condition that indicates the resource is
-// ready for use.
-func PorchRepoReady() Condition {
-	return Condition{metav1.Condition{
-		Type:               string(ConditionTypePorchRepoReady),
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             string(ConditionReasonReady),
-	}}
-}
-
-// PorchRepoFailed returns a condition that indicates the resource is in an
-// failed status.
-func PorchRepoFailed() Condition {
-	return Condition{metav1.Condition{
-		Type:               string(ConditionTypePorchRepoReady),
-		Status:             metav1.ConditionFalse,
-		LastTransitionTime: metav1.Now(),
-		Reason:             string(ConditionReasonFailed),
-	}}
-}
-
-// PorchRepoUnkown returns a condition that indicates the resource is in an
-// unknown status.
-func PorchRepoUnkown() Condition {
-	return Condition{metav1.Condition{
-		Type:               string(ConditionTypePorchRepoReady),
-		Status:             metav1.ConditionFalse,
-		LastTransitionTime: metav1.Now(),
-		Reason:             string(ConditionReasonUnknown),
-	}}
-}
-*/
