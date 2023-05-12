@@ -198,7 +198,7 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 		Name:      os.Getenv("GIT_SECRET_NAME"),
 	},
 		secret); err != nil {
-			r.l.Error(err, "cannot get secret")
+		r.l.Error(err, "cannot list repo")
 		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
 		return errors.Wrap(err, "cannot get secret")
 	}
@@ -231,6 +231,10 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: corev1.SchemeGroupVersion.Identifier(),
 				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: os.Getenv("POD_NAMESPACE"),
+				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
 			},
 			Data: map[string][]byte{
 				"username": secret.Data["username"],
