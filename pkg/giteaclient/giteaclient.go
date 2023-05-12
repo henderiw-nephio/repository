@@ -79,8 +79,10 @@ func (r *gc) Start(ctx context.Context) {
 
 		port := "3000"
 		if len(service.Spec.Ports) > 0 {
-			port = service.Spec.Ports[0].TargetPort.StrVal
+			port = service.Spec.Ports[0].TargetPort.String()
 		}
+
+		r.l.Info("target", "address", fmt.Sprintf("http://%s.%s.svc.cluster.local:%s", os.Getenv("GIT_SERVICE_NAME"), os.Getenv("GIT_NAMESPACE"), port))
 
 		// To create/list tokens we can only use basic authentication using username and password
 		giteaClient, err := gitea.NewClient(

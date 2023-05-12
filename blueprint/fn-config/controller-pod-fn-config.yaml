@@ -13,7 +13,7 @@ spec:
       scope: cluster
       permissions:
       - apiGroups: ["*"]
-        resources: [events, configmaps, secrets, service]
+        resources: [events, configmaps, secrets, services]
         verbs: [get, list, watch, update, patch, create, delete]
       - apiGroups: ["coordination.k8s.io"]
         resources: [leases]

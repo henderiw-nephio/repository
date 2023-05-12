@@ -18,7 +18,6 @@ rules:
   - events
   - configmaps
   - secrets
-  - service
   verbs:
   - get
   - list
@@ -27,6 +26,12 @@ rules:
   - patch
   - create
   - delete
+- apiGroups:
+  - '*'
+  resources:
+  - service
+  verbs:
+  - get
 - apiGroups:
   - coordination.k8s.io
   resources:
