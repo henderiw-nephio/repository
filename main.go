@@ -94,7 +94,7 @@ func main() {
 	setupLog.Info("setup controller")
 	ctx := ctrl.SetupSignalHandler()
 
-	// runs continuously until this is resolved
+	// runs a generic client which keeps the connection open
 	gc := giteaclient.New(applicator.NewAPIPatchingApplicator(mgr.GetClient()))
 	go gc.Start(ctx)
 
