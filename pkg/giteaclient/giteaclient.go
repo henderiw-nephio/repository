@@ -72,7 +72,7 @@ func (r *gc) Start(ctx context.Context) {
 			Namespace: os.Getenv("GIT_NAMESPACE"),
 			Name:      os.Getenv("GIT_SERVICE_NAME"),
 		},
-			secret); err != nil {
+			service); err != nil {
 			r.l.Error(err, "cannot get service")
 			goto LOOP
 		}
