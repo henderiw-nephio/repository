@@ -69,6 +69,12 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: status.hostIP
+        - name: GIT_NAMESPACE
+          value: gitea
+        - name: GIT_SECRET_NAME
+          value: git-user-secret
+        - name: GIT_SERVICE_NAME
+          value: gitea-http
         image: europe-docker.pkg.dev/srlinux/eu.gcr.io/repository-controller:latest
         livenessProbe:
           httpGet:

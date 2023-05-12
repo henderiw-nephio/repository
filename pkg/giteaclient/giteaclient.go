@@ -18,6 +18,8 @@ package giteaclient
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"time"
 
 	"code.gitea.io/sdk/gitea"
@@ -34,16 +36,14 @@ type GiteaClient interface {
 	Get() *gitea.Client
 }
 
-func New(client applicator.APIPatchingApplicator, namespace string) GiteaClient {
+func New(client applicator.APIPatchingApplicator) GiteaClient {
 	return &gc{
-		client:    client,
-		namespace: namespace,
+		client: client,
 	}
 }
 
 type gc struct {
-	client    applicator.APIPatchingApplicator
-	namespace string
+	client applicator.APIPatchingApplicator
 
 	giteaClient *gitea.Client
 	l           logr.Logger
@@ -59,16 +59,33 @@ func (r *gc) Start(ctx context.Context) {
 		// get secret that was created when installing gitea
 		secret := &corev1.Secret{}
 		if err := r.client.Get(ctx, types.NamespacedName{
-			Namespace: r.namespace,
-			Name:      "git-user-secret",
+			Namespace: os.Getenv("GIT_NAMESPACE"),
+			Name:      os.Getenv("GIT_SECRET_NAME"),
 		},
 			secret); err != nil {
 			r.l.Error(err, "cannot get secret")
 			goto LOOP
 		}
 
+		service := &corev1.Service{}
+		if err := r.client.Get(ctx, types.NamespacedName{
+			Namespace: os.Getenv("GIT_NAMESPACE"),
+			Name:      os.Getenv("GIT_SERVICE_NAME"),
+		},
+			secret); err != nil {
+			r.l.Error(err, "cannot get service")
+			goto LOOP
+		}
+
+		port := "3000"
+		if len(service.Spec.Ports) > 0 {
+			port = service.Spec.Ports[0].TargetPort.StrVal
+		}
+
 		// To create/list tokens we can only use basic authentication using username and password
-		giteaClient, err := gitea.NewClient("http://gitea-http.gitea.svc.cluster.local:3000", getClientAuth(secret))
+		giteaClient, err := gitea.NewClient(
+			fmt.Sprintf("http://%s.%s.svc.cluster.local:%s", os.Getenv("GIT_SERVICE_NAME"), os.Getenv("GIT_NAMESPACE"), port),
+			getClientAuth(secret))
 		if err != nil {
 			r.l.Error(err, "cannot authenticate to gitea")
 			goto LOOP
