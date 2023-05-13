@@ -36,6 +36,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -233,8 +234,17 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: os.Getenv("POD_NAMESPACE"),
+				Namespace: cr.GetNamespace(),
 				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: infrav1alpha1.SchemeBuilder.GroupVersion.Identifier(),
+						Kind:       infrav1alpha1.RepositoryKind,
+						Name:       cr.GetName(),
+						UID:        cr.GetUID(),
+						Controller: pointer.Bool(true),
+					},
+				},
 			},
 			Data: map[string][]byte{
 				"username": secret.Data["username"],
@@ -253,22 +263,24 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 }
 
 func (r *reconciler) deleteRepo(ctx context.Context, giteaClient *gitea.Client, cr *infrav1alpha1.Repository) error {
-	secret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: corev1.SchemeGroupVersion.Identifier(),
-			Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: os.Getenv("POD_NAMESPACE"),
-			Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
-		},
-	}
-	err := r.Delete(ctx, secret)
-	if resource.IgnoreNotFound(err) != nil {
-		r.l.Error(err, "cannot delete access token secret")
-		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-		return err
-	}
+	/*
+		secret := &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: corev1.SchemeGroupVersion.Identifier(),
+				Kind:       reflect.TypeOf(corev1.Secret{}).Name(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: os.Getenv("POD_NAMESPACE"),
+				Name:      fmt.Sprintf("%s-%s", cr.GetName(), "access-token"),
+			},
+		}
+		err := r.Delete(ctx, secret)
+		if resource.IgnoreNotFound(err) != nil {
+			r.l.Error(err, "cannot delete access token secret")
+			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+			return err
+		}
+	*/
 
 	u, _, err := giteaClient.GetMyUserInfo()
 	if err != nil {
