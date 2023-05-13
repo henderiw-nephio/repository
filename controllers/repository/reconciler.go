@@ -176,6 +176,7 @@ func (r *reconciler) createRepo(ctx context.Context, giteaClient *gitea.Client, 
 	if cr.Spec.TrustModel != nil {
 		createRepo.TrustModel = gitea.TrustModel(*cr.Spec.TrustModel)
 	}
+	r.l.Info("repository", "config", createRepo)
 
 	if !repoFound {
 		repo, _, err := giteaClient.CreateRepo(createRepo)
