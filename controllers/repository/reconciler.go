@@ -147,11 +147,7 @@ func (r *reconciler) createRepo(ctx context.Context, giteaClient *gitea.Client, 
 			break
 		}
 	}
-
 	createRepo := gitea.CreateRepoOption{Name: cr.GetName()}
-	if cr.Spec.DefaultBranch != nil {
-		createRepo.DefaultBranch = *cr.Spec.DefaultBranch
-	}
 	if cr.Spec.Description != nil {
 		createRepo.Description = *cr.Spec.Description
 	}
