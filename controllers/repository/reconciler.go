@@ -246,7 +246,7 @@ func (r *reconciler) createAccessToken(ctx context.Context, giteaClient *gitea.C
 			},
 			Data: map[string][]byte{
 				"username": secret.Data["username"],
-				"token": []byte(token.Token),
+				"token":    []byte(token.Token),
 			},
 			Type: corev1.SecretTypeBasicAuth,
 		}
