@@ -26,3 +26,10 @@ func (r *Token) GetCondition(t ConditionType) Condition {
 func (r *Token) SetConditions(c ...Condition) {
 	r.Status.SetConditions(c...)
 }
+
+func (r *Token) GetTokenName() string {
+	if r.Namespace == "" || r.Namespace == "default" {
+		return r.Name
+	}
+	return r.Name + "-" + r.Namespace
+}

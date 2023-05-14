@@ -165,14 +165,14 @@ func (r *reconciler) createToken(ctx context.Context, client applicator.APIPatch
 	}
 	tokenFound := false
 	for _, repo := range tokens {
-		if repo.Name == cr.GetName() {
+		if repo.Name == cr.GetTokenName() {
 			tokenFound = true
 			break
 		}
 	}
 	if !tokenFound {
 		token, _, err := giteaClient.CreateAccessToken(gitea.CreateAccessTokenOption{
-			Name: cr.GetName(),
+			Name: cr.GetTokenName(),
 		})
 		if err != nil {
 			r.l.Error(err, "cannot create token")
@@ -225,14 +225,14 @@ func (r *reconciler) deleteToken(ctx context.Context, client applicator.APIPatch
 		return err
 	}
 
-	r.l.Info("token deleted", "name", cr.GetName())
-	_, err = giteaClient.DeleteAccessToken(cr.GetName())
+	r.l.Info("token deleted", "name", cr.GetTokenName())
+	_, err = giteaClient.DeleteAccessToken(cr.GetTokenName())
 	if err != nil {
 		r.l.Error(err, "cannot delete token")
 		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
 		return err
 	}
-	r.l.Info("token deleted", "name", cr.GetName())
+	r.l.Info("token deleted", "name", cr.GetTokenName())
 	return nil
 }
 

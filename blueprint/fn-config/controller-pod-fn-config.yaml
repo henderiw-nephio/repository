@@ -18,15 +18,6 @@ spec:
       - apiGroups: ["coordination.k8s.io"]
         resources: [leases]
         verbs: [get, list, watch, update, patch, create, delete]
-    porch:
-      scope: cluster
-      permissions:
-      - apiGroups: [config.porch.kpt.dev]
-        resources: [repositories]
-        verbs: [get, list, watch, update, patch, create, delete]
-      - apiGroups: [config.porch.kpt.dev]
-        resources: [repositories/status]
-        verbs: [get, list, watch, update, patch, create, delete]
     leader-election:
       permissions:
       - apiGroups: [""]
