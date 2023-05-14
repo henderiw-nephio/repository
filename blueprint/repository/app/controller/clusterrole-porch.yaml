@@ -41,6 +41,10 @@ rules:
   resources:
   - repositories
   - repositories/status
+  - repositorytokens
+  - repositorytokens/status
+  - tokens
+  - tokens/status
   verbs:
   - get
   - list

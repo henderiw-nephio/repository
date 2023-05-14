@@ -25,3 +25,23 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - infra.nephio.org
+  resources:
+  - tokens
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infra.nephio.org
+  resources:
+  - tokens/status
+  verbs:
+  - get
+  - patch
+  - update
