@@ -19,6 +19,7 @@ package token
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"time"
 
@@ -144,18 +145,17 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *reconciler) createToken(ctx context.Context, client applicator.APIPatchingApplicator, giteaClient *gitea.Client, cr *infrav1alpha1.Token) error {
-	/*
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Namespace: os.Getenv("GIT_NAMESPACE"),
-			Name:      os.Getenv("GIT_SECRET_NAME"),
-		},
-			secret); err != nil {
-			r.l.Error(err, "cannot list repo")
-			cr.SetConditions(infrav1alpha1.Failed(err.Error()))
-			return errors.Wrap(err, "cannot get secret")
-		}
-	*/
+
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: os.Getenv("GIT_NAMESPACE"),
+		Name:      os.Getenv("GIT_SECRET_NAME"),
+	},
+		secret); err != nil {
+		r.l.Error(err, "cannot list repo")
+		cr.SetConditions(infrav1alpha1.Failed(err.Error()))
+		return errors.Wrap(err, "cannot get secret")
+	}
 
 	tokens, _, err := giteaClient.ListAccessTokens(gitea.ListAccessTokensOptions{})
 	if err != nil {
@@ -191,8 +191,8 @@ func (r *reconciler) createToken(ctx context.Context, client applicator.APIPatch
 				Name:      cr.GetName(),
 			},
 			Data: map[string][]byte{
-				//"username": secret.Data["username"],
-				"token": []byte(token.Token),
+				"username": secret.Data["username"],
+				"token":    []byte(token.Token),
 			},
 			Type: corev1.SecretTypeBasicAuth,
 		}
