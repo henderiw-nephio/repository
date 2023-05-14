@@ -145,7 +145,6 @@ func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *reconciler) createToken(ctx context.Context, client applicator.APIPatchingApplicator, giteaClient *gitea.Client, cr *infrav1alpha1.Token) error {
-
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Namespace: os.Getenv("GIT_NAMESPACE"),
@@ -192,6 +191,7 @@ func (r *reconciler) createToken(ctx context.Context, client applicator.APIPatch
 			},
 			Data: map[string][]byte{
 				"username": secret.Data["username"],
+				"password":    []byte(token.Token),
 				"token":    []byte(token.Token),
 			},
 			Type: corev1.SecretTypeBasicAuth,
@@ -202,7 +202,6 @@ func (r *reconciler) createToken(ctx context.Context, client applicator.APIPatch
 			return err
 		}
 		r.l.Info("secret for token created", "name", cr.GetName())
-
 	}
 	return nil
 }
