@@ -26,9 +26,6 @@ import (
 
 // TokenSpec defines the desired state of Token
 type TokenSpec struct {
-	// RespositoryName defines the name of the repository
-	// +optional
-	RespositoryName string `json:"repositoryName" yaml:"repositoryName"`
 	// Cluster defines the cluster on which this token must be installed
 	// We use Name and Namespace
 	// +optional
